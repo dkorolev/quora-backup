@@ -14,7 +14,7 @@ def log_if_v(msg):
         print('[DEBUG] %s' % msg, file=sys.stderr)
 
 # Given origin (timestamp offset by time zone) and string from Quora, e.g.
-# "Added 31 Jan", returns a string such as '2015-01-31'.
+# "Added 31 Jan" as well as "Added Jan 31", returns a string such as '2016-01-31'.
 # Quora's short date strings don't provide enough information to determine the
 # exact time, unless it was within the last day, so we won't bother to be any
 # more precise.
@@ -28,9 +28,11 @@ def parse_quora_date(origin, quora_str):
     m0 = re.match('just now$', date_str) 
     m1 = re.match('(\d+)m ago$', date_str)
     m2 = re.match('(\d+)h ago$', date_str)
-    m3 = re.match('(' + '|'.join(days_of_week) + ')$', date_str)
-    m4 = re.match('(\d+) (' + '|'.join(months_of_year) + ')$', date_str)
-    m5 = re.match('(\d+) (' + '|'.join(months_of_year) + '), (\d+)$', date_str)
+    m3 = re.match('(\d+)' + ' ' + '(' + '|'.join(months_of_year) + ')' + ', (\d+)$', date_str)
+    m4 = re.match('(' + '|'.join(months_of_year) + ')' + ' ' + '(\d+)' + ', (\d+)$', date_str)
+    m5 = re.match('(' + '|'.join(days_of_week) + ')$', date_str)
+    m6 = re.match('(\d+) (' + '|'.join(months_of_year) + ')$', date_str)
+    m7 = re.match('(' + '|'.join(months_of_year) + ') (\d+)$', date_str)
     if not m0 is None:
         tm = time.gmtime(origin)
     elif not m1 is None:
@@ -38,8 +40,14 @@ def parse_quora_date(origin, quora_str):
     elif not m2 is None:
         tm = time.gmtime(origin - 3600*int(m2.group(1)))
     elif not m3 is None:
+        # may raise ValueError
+        tm = time.strptime(date_str, '%d %b, %Y')
+    elif not m4 is None:
+        # may raise ValueError
+        tm = time.strptime(date_str, '%b %d, %Y')
+    elif not m5 is None:
         # Walk backward until we reach the given day of the week
-        day_of_week = days_of_week.index(m3.group(1))
+        day_of_week = days_of_week.index(m5.group(1))
         offset = 1
         while offset <= 7:
             tm = time.gmtime(origin - 86400*offset)
@@ -48,10 +56,10 @@ def parse_quora_date(origin, quora_str):
             offset += 1
         else:
             raise ValueError('date "%s" is invalid' % date_str)
-    elif not m4 is None:
+    elif not m6 is None:
         # Walk backward until we reach the given month and year
-        month_of_year = months_of_year.index(m4.group(2)) + 1
-        day_of_month = int(m4.group(1))
+        month_of_year = months_of_year.index(m6.group(2)) + 1
+        day_of_month = int(m6.group(1))
         offset = 1
         while offset <= 366:
             tm = time.gmtime(origin - 86400*offset)
@@ -60,9 +68,18 @@ def parse_quora_date(origin, quora_str):
             offset += 1
         else:
             raise ValueError('date "%s" is invalid' % date_str)
-    elif not m5 is None:
-        # may raise ValueError
-        tm = time.strptime(date_str, '%d %b, %Y')
+    elif not m7 is None:
+        # Walk backward until we reach the given month and year
+        month_of_year = months_of_year.index(m7.group(1)) + 1
+        day_of_month = int(m7.group(2))
+        offset = 1
+        while offset <= 366:
+            tm = time.gmtime(origin - 86400*offset)
+            if tm.tm_mon == month_of_year and tm.tm_mday == day_of_month:
+                break
+            offset += 1
+        else:
+            raise ValueError('date "%s" is invalid' % date_str)
     else:
         raise ValueError('date "%s" could not be interpreted' % date_str)
     return '%d-%02d-%02d' % (tm.tm_year, tm.tm_mon, tm.tm_mday)
